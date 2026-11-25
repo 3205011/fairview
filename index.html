@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FairView prototype</title>
+<style>
+:root{--navy:#1f3a5f;--red:#c0392b;--green:#2e8b57;--amber:#d99a00;--line:#d9dde3}
+*{box-sizing:border-box}body{font:15px/1.45 system-ui,sans-serif;margin:0;background:#f4f6f9;color:#16202c}
+header{background:var(--navy);color:#fff;padding:14px 20px}header h1{margin:0;font-size:20px}header p{margin:2px 0 0;font-size:13px;opacity:.85}
+main{max-width:980px;margin:18px auto;padding:0 14px;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}.card h2{margin:0 0 10px;font-size:16px;color:var(--navy)}
+.wide{grid-column:1/-1}label{display:block;margin:8px 0 2px;font-weight:600}input[type=range]{width:100%}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+button{font:inherit;border:1px solid var(--navy);background:#fff;color:var(--navy);padding:6px 12px;border-radius:7px;cursor:pointer}
+button.on,button.primary{background:var(--navy);color:#fff}
+.badge{padding:12px;border-radius:9px;color:#fff;font-weight:700;font-size:20px;text-align:center}
+.s{background:var(--green)}.n{background:var(--red)}.b{background:var(--amber)}
+.note{color:#5a6573;font-size:13px}.what{background:#e8f1fb;border:1px solid #7aa6d6;border-radius:8px;padding:8px 10px;margin-top:8px}
+.bar{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:6px;margin:5px 0}
+.track{position:relative;height:14px;background:#eef0f3;border-radius:4px}.track:after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;border-left:1px solid #777}
+.fill{position:absolute;top:0;bottom:0}
+.scale button{width:36px;padding:6px 0}.scale{display:flex;gap:6px;margin:6px 0}
+textarea{width:100%;font:inherit;padding:6px;border:1px solid var(--line);border-radius:7px}
+table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left}
+.hidden{display:none}
+</style></head><body>
+<header><h1>FairView: scholarship shortlisting</h1>
+<p>Prototype. Synthetic data only. You play an applicant; no real personal data is used or stored.</p></header>
+<main>
+<section class="card"><h2>1. Applicant profile</h2>
+<div class="row"><span>Persona:</span><span id="personas"></span></div>
+<label>Grades: <b id="gv"></b>%</label><input id="g" type="range" min="40" max="100" step="1">
+<label>Volunteering: <b id="hv"></b> h</label><input id="h" type="range" min="0" max="100" step="1">
+<label>Household income band: <b id="iv"></b> (1 = low, 5 = high)</label><input id="i" type="range" min="1" max="5" step="1">
+<p class="note">The decision updates as you move the sliders. Moving them is your "what if".</p>
+<div class="row"><span class="note">Condition (A or B):</span>
+<span><button id="cA">A: decision only</button> <button id="cB">B: with reasons</button></span></div></section>
+
+<section class="card"><h2>2. Decision <span id="condtag" class="note"></span></h2>
+<div id="badge" class="badge"></div><div id="line" class="note" style="margin-top:6px"></div>
+<div id="explain" class="hidden"><h2 style="margin-top:12px">What pushed the decision</h2><div id="bars"></div>
+<p class="note">Not used: name, school, postcode. Income band is shown, but an applicant cannot change it.</p>
+<div id="what" class="what"></div></div></section>
+
+<section class="card wide"><h2>3. Your view of this decision</h2>
+<div>How fair does this decision feel? (1 = very unfair, 7 = very fair)</div><div class="scale" id="scale"></div>
+<textarea id="cm" rows="2" placeholder="Why? (optional)"></textarea>
+<div class="row" style="margin-top:8px"><label style="margin:0;font-weight:400"><input type="checkbox" id="flag"> Flag this decision for a person to review</label>
+<button class="primary" id="sub">Submit</button></div><div id="msg" class="note"></div></section>
+
+<section class="card wide"><h2>4. Audit view (simulated: synthetic applicants, placeholder ratings)</h2>
+<p class="note">Perceived fairness (ratings) versus measured fairness (outcomes by group). 500 synthetic applicants scored with the same model.</p>
+<div id="aud"></div>
+<h2 style="margin-top:14px">Mean fairness rating (1-7) by outcome and condition</h2><div id="rt"></div>
+<div style="margin-top:8px"><button id="ph">Load placeholder ratings</button> <button id="dl">Download ratings (CSV)</button> <button id="clr">Clear</button></div></section>
+</main>
+<script>
+const M={"features": ["Grades", "Volunteering", "Income band"], "mean": [69.5769, 30.436, 3.1367], "std": [12.0054, 17.968, 1.4252], "coef": [2.2175, 1.1379, 1.1282], "intercept": 0.1406, "audit": {"n": 500, "rate_by_band": {"1": 20, "2": 28, "3": 38, "4": 58, "5": 69}, "gap": 49, "flip_pct": 48}};
+const PERSONAS={Sam:[70,10,3],Priya:[78,30,1],Alex:[62,10,5]};
+let cond=Math.random()<.5?"A":"B", sel=0, ratings=[];
+const $=id=>document.getElementById(id);
+const contrib=(g,h,i)=>[g,h,i].map((x,k)=>M.coef[k]*(x-M.mean[k])/M.std[k]);
+const prob=(g,h,i)=>1/(1+Math.exp(-(M.intercept+contrib(g,h,i).reduce((a,b)=>a+b,0))));
+const label=p=>p>=.6?["Shortlisted","s"]:p<=.4?["Not shortlisted","n"]:["Borderline","b"];
+function whatIf(g,h,i){const o=[];
+ for(let v=g+1;v<=100;v++)if(prob(v,h,i)>=.6){o.push("grades to "+v+"%");break}
+ for(let v=h+1;v<=100;v++)if(prob(g,v,i)>=.6){o.push("volunteering to "+v+" h");break}
+ return o}
+const vals=()=>[+$("g").value,+$("h").value,+$("i").value];
+function render(){const [g,h,i]=vals();$("gv").textContent=g;$("hv").textContent=h;$("iv").textContent=i;
+ const p=prob(g,h,i),[t,c]=label(p);$("badge").textContent=t;$("badge").className="badge "+c;
+ $("cA").className=cond=="A"?"on":"";$("cB").className=cond=="B"?"on":"";$("condtag").textContent="(Condition "+cond+")";
+ $("line").textContent=c=="b"?"Too close to call. A person will decide this one.":"";
+ $("explain").className=cond=="B"?"":"hidden";
+ if(cond=="B"){$("line").textContent=Math.round(p*100)+"% likelihood of shortlisting (needs 60%)."+(c=="b"?" Too close to call, so a person will decide this one.":"");
+  const cs=contrib(g,h,i);$("bars").innerHTML=M.features.map((f,k)=>{const w=Math.min(Math.abs(cs[k])/2,1)*50;
+   return `<div class="bar"><span>${f}</span><div class="track"><div class="fill" style="background:${cs[k]>=0?"#2e8b57":"#c0392b"};width:${w}%;left:${cs[k]>=0?50:50-w}%"></div></div></div>`}).join("");
+  const o=whatIf(g,h,i);$("what").textContent=p>=.6?"Already shortlisted at this profile.":o.length?"What would change it: raising "+o.join(" or ")+".":"No change to grades or volunteering alone would shortlist this profile."}
+ audit()}
+function audit(){const A=M.audit;$("aud").innerHTML="<table><tr><th>Income band</th>"+Object.keys(A.rate_by_band).map(b=>"<th>"+b+"</th>").join("")+"</tr><tr><td>Shortlisted %</td>"+Object.values(A.rate_by_band).map(v=>"<td>"+v+"</td>").join("")+"</tr></table><p>Parity gap (highest minus lowest band): <b>"+A.gap+" points</b>. Flip test: <b>"+A.flip_pct+"%</b> of applicants get a different decision when only income band changes from 1 to 5.</p>";
+ const k=(c,d)=>{const r=ratings.filter(x=>x.cond==c&&x.decision==d).map(x=>x.rating);return r.length?(r.reduce((a,b)=>a+b,0)/r.length).toFixed(1)+" (n="+r.length+")":"-"};
+ $("rt").innerHTML="<table><tr><th></th><th>Shortlisted</th><th>Not shortlisted</th></tr><tr><td>A: decision only</td><td>"+k("A","Shortlisted")+"</td><td>"+k("A","Not shortlisted")+"</td></tr><tr><td>B: with reasons</td><td>"+k("B","Shortlisted")+"</td><td>"+k("B","Not shortlisted")+"</td></tr></table><p class='note'>Borderline decisions are referred to a person and are not rated here. Flagged so far: "+ratings.filter(x=>x.flag).length+".</p>"}
+function setP(n){[$("g").value,$("h").value,$("i").value]=PERSONAS[n];render()}
+$("personas").innerHTML=Object.keys(PERSONAS).map(n=>`<button data-n="${n}">${n}</button>`).join(" ");
+$("personas").onclick=e=>{if(e.target.dataset.n)setP(e.target.dataset.n)};
+["g","h","i"].forEach(id=>$(id).oninput=render);
+$("cA").onclick=()=>{cond="A";render()};$("cB").onclick=()=>{cond="B";render()};
+$("scale").innerHTML=[1,2,3,4,5,6,7].map(n=>`<button data-r="${n}">${n}</button>`).join("");
+$("scale").onclick=e=>{if(e.target.dataset.r){sel=+e.target.dataset.r;[...$("scale").children].forEach(b=>b.className=+b.dataset.r==sel?"on":"")}};
+$("sub").onclick=()=>{if(!sel){$("msg").textContent="Pick a rating from 1 to 7 first.";return}
+ const [g,h,i]=vals(),p=prob(g,h,i);ratings.push({cond,g,h,i,p:+p.toFixed(3),decision:label(p)[0],rating:sel,flag:$("flag").checked,comment:$("cm").value});
+ $("msg").textContent=$("flag").checked?"Saved. This decision is flagged for a person to review.":"Saved. Only the condition, profile, rating and comment are kept.";
+ sel=0;[...$("scale").children].forEach(b=>b.className="");$("cm").value="";$("flag").checked=false;audit()};
+$("ph").onclick=()=>{const mk=(c,d,a)=>a.map(r=>({cond:c,decision:d,rating:r,flag:false,placeholder:true}));
+ ratings=[...mk("A","Shortlisted",[6,5,6,5,6,6,5,6,5,6]),...mk("A","Not shortlisted",[2,3,2,2,3,2,3,2,2,3]),...mk("B","Shortlisted",[6,6,5,6,6,5,6,6,5,6]),...mk("B","Not shortlisted",[3,4,3,3,4,3,3,4,3,3])];audit()};
+$("clr").onclick=()=>{ratings=[];audit()};
+$("dl").onclick=()=>{const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';const rows=["condition,grades,volunteering,income,likelihood,decision,rating,flagged,comment,placeholder"]
+ .concat(ratings.map(r=>[r.cond,r.g,r.h,r.i,r.p,r.decision,r.rating,r.flag,q(r.comment),!!r.placeholder].join(",")));
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.join("\n")],{type:"text/csv"}));a.download="ratings.csv";a.click()};
+setP("Sam");
+</script></body></html>
